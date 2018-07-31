@@ -1,0 +1,161 @@
+---
+title: "Land cover classification in R"
+subtitle: "Example of the Banks Peninsula in New Zealand"
+author: "Hanna Meyer"
+date: "July 25, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This tutorial shows one (of many) workflows of how to perform a land cover classification in R using machine learning algorithms. 
+For this tutorial we aim at mapping the invasive species gorse (Ulex europaeus) on the Banks Peninsula in New Zealand. This plant was broad to New Zealand during the european settlement as a hedge plant and spreads into farmland since with negative consequences for the quality of the grassland. Each year millions of dollars are spent for it's control. To develop management strategies it's of importance to map the distribution of such plants. Since field samplings mean huge expenses, remote sensing methods are required for a spatially explicit monitoring. In this tutorial, we're going to use Sentinel satellite imagery from 2017 to map the current distribution on a section of the Banks Peninsula.
+
+The technical aim of the tutorial is to show land cover classifications based on satellite data can be performed in R using machine learning algorithms such as Random Forests.
+
+### How to start
+
+For this tutorial we need the raster package for processing of the satellite data as well as the caret package as a wrapper for the randomForest algorithm. Mapview is used for spatial visualization of the data. 
+
+```{r start, message=FALSE}
+rm(list=ls())
+library(raster)
+library(caret)
+library(mapview)
+```
+
+## Load and explore the data
+
+To start with, let's load the Sentinel data as well as a shapefile of the training sites.
+
+```{r load}
+sentinel <- stack("data/sentinel2017.grd")
+training <- shapefile("data/trainingSites.shp")
+```
+
+First get an overview on the data. As satellite data, a Sentinel-2 scene from october 2017 is used. Sentinel has a spatial resolution of 10-20m and has spectral channels in the visible, near infrared as well as shortwave infrared. The Sentinel data subset for this tutorial contains the Sentinel channels 2-8 (visible and near infrared channels) as well as the NDVI and a yellowness index that was calculated as (red+green-blue)/(red+green+blue) as additional bands. We assume the yellowness index is valuable to distinguish the striking yellow color of the gorse from other vegetation.
+
+The shapefile contains the training sites of 9 Land cover classes. These are polygons (23 in total) that were digitized in QGIS on the basis of the Sentinel data using expert knowledge and can be ragarded as a ground truth for the land cover classification. 
+
+```{r vis}
+print(sentinel)
+print(training)
+```
+
+Using mapview's viewRGB function we can visualize the Sentinel data as true color composite in the geographical context and overlay it with the polygons. Click on the polygons to see which land cover class is assigned to a respective polygon.
+
+```{r visMV, warning=FALSE, message= FALSE}
+viewRGB(sentinel, r = 3, g = 2, b = 1, map.types = "Esri.WorldImagery")+
+  mapview(training)
+```
+
+### Extract raster information
+
+In order to train a Random forest model between the spectral properties and the land cover class, we first need to create a data frame that contains the spectral properties of the training sites as well as the corresponding class information. This data frame can be produced with the extract function. The resulting data frame contains the Sentinel data for each pixel overlayed by the polygons. This data frame then still needs to be merged with the information on the land cover class from the shapefile. This happens via the ID of the polygons which are given in the extracted data frame by the column "ID" and in the shapefile by the attribute "id".
+
+```{r extract}
+extr <- extract(sentinel, training, df=TRUE)
+extr <- merge(extr, training, by.x="ID", by.y="id")
+head(extr)
+```
+
+
+## Split data
+
+In order to keep data for a later (nearly) independent validation as well as to limit the number of data points so that the model training won't take long time, we split the total data set into 30% training data and 70% test data. Caret's createDataPartition takes care that the class distribution is the same in both datasets. We put the test data to the side and first only continue with the training data.
+
+```{r split}
+set.seed(100)
+trainids <- createDataPartition(extr$Class,list=FALSE,p=0.3)
+trainDat <- extr[trainids,]
+testDat <- extr[-trainids,]
+```
+
+## Visualize relationships
+
+To get an idea about the relationships between the spectral Sentinel data and the land cover class, we see how the yellowness index differs according to the land cover class. 
+
+```{r featurePlot}
+boxplot(trainDat$yellowness~trainDat$Class,las=2)
+```
+
+We can also get an impression about the separability of the classes we create a feature plot that visualizes the location of the training samples in a scatter plot of two Sentinel channels. 
+
+```{r featurePlot2}
+featurePlot(x = trainDat[, c("B03","B04","B08","yellowness")], 
+            y = factor(trainDat$Class), 
+            plot = "pairs",
+            auto.key = list(columns = 4))
+```
+
+As expected, gorse features the highest "yellowness" values while all other land cover classes have considerably lower values. With view to the feature plot note that there is only low separability considering Sentinel channel 3 and 4 (green and red) but high separability when channel 8 (near infrared) or the yellowness index is included.
+
+
+## Model training
+### Define predictors and response
+
+For model training we then need to define the predictor and response variables. As predictors we can use basically all information from the Sentinel raster stack as we can assume they are all meaningful in differentiation between the land cover classes. As response variable we use the "Class" column of the data frame.
+
+```{r vars}
+predictors <- c("B02","B03","B04","B05","B06","B07",
+                "B08","B8A","yellowness","NDVI")
+response <- "Class"
+```
+
+### Random forest model training
+
+We then train a random forest model to lean how the classes can be distinguished based on the predictors. Caret's train function is doing this job. Method = "rf" indicates that we want to train a Random forest model. For hyperparameter tuning (mtry) as well as for a first error assessment we use a 10 fold random cross varlidation as indicated by trainControl. 
+
+
+```{r train}
+set.seed(100)
+model <- train(trainDat[,predictors],trainDat[,response],method="rf",
+               trControl=trainControl(method="cv"),importance=TRUE)
+print(model)
+```
+
+We see that the classes could be distinguished with a high accuracy. The optimal mtry value for the model is 2, however, varying the mtry value did not result in high differences.
+
+### Variable importance and effect of mtry tuning
+
+The effect of mtry tuning can be visualized by plotting the model. 
+
+```{r trainVIS}
+plot(model)
+```
+
+Again we notice by the scale of the y axis that this model is insensitive to varying mtry values.
+Having a look at the varImp we see which variables are important to delineate the individual land cover classes.
+
+```{r trainVIS2}
+plot(varImp(model))
+```
+
+## Model prediction
+
+Finally we want to use the model for making spatial predictions, hence for classifying the entire Sentinel scene. Therefore the model is applied on the full raster stack using the predict function from the raster package.
+
+```{r predict}
+prediction <- predict(sentinel,model)
+```
+
+Now we can create a map with meaningful colors of the predicted land cover.
+
+```{r predictVIS}
+spplot(prediction,col.regions=c("brown","darkgreen","black","yellow",
+                                "green","white","red","blue"))
+```
+
+## Model validation
+
+After classification we still want to get an impression about the performance of the model or the accuracy of the land cover map. Therefore we use the model to make predictions for the test data (that have not been used for model training) and we compare these predictions with the "true" values in a contingency table. Having a look at the contingency table confusion only appeared between the classes bare, sand and urban, all other classes could be predicted perfectly. Note that the test data are, however, not completely independent as they originate from the same polygons that were also used for model training. A truely independent validation would test if the modle can be applied to new locations hence further ground truth polygons would be required.
+
+
+```{r valid}
+pred_valid <- predict(model,testDat)
+table(testDat$Class,pred_valid)
+```
