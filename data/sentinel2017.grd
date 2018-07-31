@@ -1,0 +1,25 @@
+[general]
+creator=R package 'raster'
+created=2018-07-25 05:55:08
+[georeference]
+nrows=1257
+ncols=1405
+xmin=655950
+ymin=5138290
+xmax=670000
+ymax=5150860
+projection=+proj=utm +zone=59 +south +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0
+[data]
+datatype=FLT4S
+byteorder=little
+nbands=10
+bandorder=BIL
+minvalue=619:373:194:98:168.3125:155.1875:139.0625:100.1875:-0.681087762669963:-0.106681034482759
+maxvalue=5385:5137:5289:6984:4209.0625:5333.6875:6705.6875:7297.25:0.898908480268682:0.536214605067064
+nodatavalue=-3.4e+38
+[legend]
+legendtype=
+values=
+color=
+[description]
+layername=B02:B03:B04:B08:B05:B06:B07:B8A:NDVI:yellowness
