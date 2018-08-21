@@ -159,3 +159,6 @@ After classification we still want to get an impression about the performance of
 pred_valid <- predict(model,testDat)
 table(testDat$Class,pred_valid)
 ```
+
+## Final note
+This tutorial only showed the basic workflow of how to use machine learning for spatial mapping. Since spatial and spatio-temporal models however have a risk of overfitting causeb by the spatial dependencies in the data, it is important to use more advanced validation and modelling strategies. Have a look at the CAST package for example for spatial cross-validation for error assessment and for spatial variable selection strategies.
