@@ -26,6 +26,7 @@ rm(list=ls())
 library(raster)
 library(caret)
 library(mapview)
+library(sf)
 ```
 
 ## Load and explore the data
@@ -34,7 +35,7 @@ To start with, let's load the Sentinel data as well as a shapefile of the traini
 
 ```{r load}
 sentinel <- stack("data/sentinel2017.grd")
-training <- shapefile("data/trainingSites.shp")
+training <- read_sf("data/trainingSites.shp")
 ```
 
 First get an overview on the data. As satellite data, a Sentinel-2 scene from october 2017 is used. Sentinel has a spatial resolution of 10-20m and has spectral channels in the visible, near infrared as well as shortwave infrared. The Sentinel data subset for this tutorial contains the Sentinel channels 2-8 (visible and near infrared channels) as well as the NDVI and a yellowness index that was calculated as (red+green-blue)/(red+green+blue) as additional bands. We assume the yellowness index is valuable to distinguish the striking yellow color of the gorse from other vegetation.
